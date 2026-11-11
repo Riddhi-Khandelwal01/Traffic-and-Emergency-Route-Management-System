@@ -1,0 +1,1490 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+/* ------------------------------ Constants ------------------------------ */
+const int    MAX_LOCATIONS   = 30;
+const int    MAX_PENDING     = 200;
+const int    LOG_CAPACITY    = 10;
+const double AVG_SPEED_KMPH  = 40.0;   
+const double INF             = 1e18;
+
+template <typename T>
+string toStr(T v) {
+    ostringstream o;
+    o << v;
+    return o.str();
+}
+
+string toLower(const string& s) {
+    string r = s;
+    for (size_t i = 0; i < r.size(); i++) r[i] = (char)tolower((unsigned char)r[i]);
+    return r;
+}
+
+string trim(const string& s) {
+    size_t a = 0, b = s.size();
+    while (a < b && isspace((unsigned char)s[a])) a++;
+    while (b > a && isspace((unsigned char)s[b - 1])) b--;
+    return s.substr(a, b - a);
+}
+
+bool containsText(const string& hay, const string& needle) {
+    return toLower(hay).find(toLower(needle)) != string::npos;
+}
+
+/* cut a string so that it fits a column of width w */
+string fit(const string& s, size_t w) {
+    if (s.size() > w) return s.substr(0, w - 1) + ".";
+    return s;
+}
+
+void printLine(char c = '=', int n = 78) {
+    cout << string(n, c) << "\n";
+}
+
+void printHeader(const string& title) {
+    cout << "\n";
+    printLine('=');
+    cout << "  " << title << "\n";
+    printLine('=');
+}
+
+/* ----------------------------- Safe input ------------------------------ */
+string readLine(const string& prompt) {
+    string s;
+    while (true) {
+        cout << prompt;
+        if (!getline(cin, s)) {
+            cout << "\n[Input closed. Exiting the program.]\n";
+            exit(0);
+        }
+        s = trim(s);
+        if (!s.empty()) return s;
+        cout << "  ! Input cannot be empty. Please try again.\n";
+    }
+}
+
+int readInt(const string& prompt, int lo, int hi) {
+    while (true) {
+        string s = readLine(prompt);
+        stringstream ss(s);
+        int v;
+        char extra;
+        if ((ss >> v) && !(ss >> extra)) {
+            if (v >= lo && v <= hi) return v;
+        }
+        cout << "  ! Invalid input. Enter a whole number between " << lo << " and " << hi << ".\n";
+    }
+}
+
+double readDouble(const string& prompt, double lo, double hi) {
+    while (true) {
+        string s = readLine(prompt);
+        stringstream ss(s);
+        double v;
+        char extra;
+        if ((ss >> v) && !(ss >> extra)) {
+            if (v >= lo && v <= hi) return v;
+        }
+        cout << "  ! Invalid input. Enter a number between " << lo << " and " << hi << ".\n";
+    }
+}
+
+bool readYesNo(const string& prompt) {
+    while (true) {
+        string s = toLower(readLine(prompt));
+        if (s == "y" || s == "yes") return true;
+        if (s == "n" || s == "no") return false;
+        cout << "  ! Please type y or n.\n";
+    }
+}
+
+string readName(const string& prompt, size_t maxLen) {
+    while (true) {
+        string s = readLine(prompt);
+        if (s.size() <= maxLen) return s;
+        cout << "  ! Name too long (maximum " << maxLen << " characters). Try again.\n";
+    }
+}
+
+void pauseScreen() {
+    cout << "\nPress ENTER to continue...";
+    string s;
+    getline(cin, s);
+}
+
+/* -------------------------- Naming / lookup helpers -------------------- */
+string trafficName(int l) {
+    switch (l) {
+        case 1:  return "Free Flow";
+        case 2:  return "Light";
+        case 3:  return "Moderate";
+        case 4:  return "Heavy";
+        default: return "Severe Jam";
+    }
+}
+
+/* travel-time multiplier: heavier traffic = costlier edge */
+double trafficFactor(int l) {
+    switch (l) {
+        case 1:  return 1.0;
+        case 2:  return 1.25;
+        case 3:  return 1.5;
+        case 4:  return 2.0;
+        default: return 3.0;
+    }
+}
+
+string emergencyTypeName(int t) {
+    switch (t) {
+        case 1:  return "Road Accident";
+        case 2:  return "Medical Emergency";
+        case 3:  return "Fire";
+        default: return "Crime / Other";
+    }
+}
+
+string emergencyTypeShort(int t) {
+    switch (t) {
+        case 1:  return "Accident";
+        case 2:  return "Medical";
+        case 3:  return "Fire";
+        default: return "Crime/Other";
+    }
+}
+
+/* 1 = Ambulance, 2 = Fire Truck, 3 = Police Car */
+int requiredVehicleType(int emType) {
+    if (emType == 1 || emType == 2) return 1;
+    if (emType == 3) return 2;
+    return 3;
+}
+
+string vehicleTypeName(int t) {
+    switch (t) {
+        case 1:  return "Ambulance";
+        case 2:  return "Fire Truck";
+        default: return "Police Car";
+    }
+}
+
+bool needsHospital(int emType) {
+    return emType == 1 || emType == 2;
+}
+
+string severityName(int s) {
+    switch (s) {
+        case 1:  return "Minor";
+        case 2:  return "Low";
+        case 3:  return "Serious";
+        case 4:  return "Critical";
+        default: return "Life-Threatening";
+    }
+}
+
+string statusName(int s) {
+    switch (s) {
+        case 0:  return "Pending";
+        case 1:  return "Dispatched";
+        default: return "Completed";
+    }
+}
+
+double etaMinutes(double effectiveKm) {
+    return effectiveKm / AVG_SPEED_KMPH * 60.0;
+}
+
+void printTrafficLegend() {
+    cout << "  Traffic levels:  1 = Free Flow   2 = Light   3 = Moderate\n"
+         << "                   4 = Heavy       5 = Severe Jam\n";
+}
+
+/* ======================================================================
+ *  MIN-HEAP  (used internally by Dijkstra's algorithm)
+ * ====================================================================== */
+struct HeapItem {
+    double key;
+    int node;
+};
+
+class MinHeap {
+    HeapItem* data;
+    int count, cap;
+    MinHeap(const MinHeap&);
+    MinHeap& operator=(const MinHeap&);
+public:
+    MinHeap() : count(0), cap(32) { data = new HeapItem[cap]; }
+    ~MinHeap() { delete[] data; }
+    bool empty() const { return count == 0; }
+
+    void push(double key, int node) {
+        if (count == cap) {
+            HeapItem* nd = new HeapItem[cap * 2];
+            for (int i = 0; i < count; i++) nd[i] = data[i];
+            delete[] data;
+            data = nd;
+            cap *= 2;
+        }
+        int i = count++;
+        while (i > 0) {
+            int p = (i - 1) / 2;
+            if (data[p].key <= key) break;
+            data[i] = data[p];
+            i = p;
+        }
+        data[i].key = key;
+        data[i].node = node;
+    }
+
+    HeapItem pop() {
+        HeapItem top = data[0];
+        HeapItem last = data[--count];
+        int i = 0;
+        while (true) {
+            int l = 2 * i + 1;
+            if (l >= count) break;
+            int r = l + 1;
+            int c = (r < count && data[r].key < data[l].key) ? r : l;
+            if (data[c].key >= last.key) break;
+            data[i] = data[c];
+            i = c;
+        }
+        if (count > 0) data[i] = last;
+        return top;
+    }
+};
+
+/* ======================================================================
+ *  GRAPH  (road network)  - locations are vertices, roads are edges
+ * ====================================================================== */
+struct Edge {
+    int to;
+    double dist;      /* kilometres            */
+    int traffic;      /* 1 (free) .. 5 (jam)   */
+    bool blocked;
+    Edge* next;
+};
+
+struct Route {
+    bool found;
+    double cost;      /* traffic-weighted distance */
+    double dist;      /* real distance in km       */
+    int len;
+    int path[MAX_LOCATIONS];
+};
+
+Route emptyRoute() {
+    Route r;
+    r.found = false;
+    r.cost = 0;
+    r.dist = 0;
+    r.len = 0;
+    for (int i = 0; i < MAX_LOCATIONS; i++) r.path[i] = -1;
+    return r;
+}
+
+class Graph {
+    string names[MAX_LOCATIONS];
+    Edge* adj[MAX_LOCATIONS];
+    int n;
+    int roads;
+
+    Graph(const Graph&);
+    Graph& operator=(const Graph&);
+
+    void insertEdge(int u, int v, double d, int t) {
+        Edge* e = new Edge;
+        e->to = v;
+        e->dist = d;
+        e->traffic = t;
+        e->blocked = false;
+        e->next = adj[u];
+        adj[u] = e;
+    }
+
+public:
+    Graph() : n(0), roads(0) {
+        for (int i = 0; i < MAX_LOCATIONS; i++) adj[i] = NULL;
+    }
+
+    ~Graph() {
+        for (int i = 0; i < n; i++) {
+            Edge* e = adj[i];
+            while (e) {
+                Edge* nx = e->next;
+                delete e;
+                e = nx;
+            }
+        }
+    }
+
+    int size() const { return n; }
+    int roadCount() const { return roads; }
+    const string& name(int i) const { return names[i]; }
+
+    int findLocation(const string& nm) const {
+        for (int i = 0; i < n; i++)
+            if (toLower(names[i]) == toLower(nm)) return i;
+        return -1;
+    }
+
+    /* returns index, -1 if full, -2 if duplicate */
+    int addLocation(const string& nm) {
+        if (n >= MAX_LOCATIONS) return -1;
+        if (findLocation(nm) != -1) return -2;
+        names[n] = nm;
+        adj[n] = NULL;
+        return n++;
+    }
+
+    Edge* findEdge(int u, int v) const {
+        for (Edge* e = adj[u]; e; e = e->next)
+            if (e->to == v) return e;
+        return NULL;
+    }
+
+    void addRoad(int u, int v, double d, int t) {
+        insertEdge(u, v, d, t);
+        insertEdge(v, u, d, t);
+        roads++;
+    }
+
+    void setTraffic(int u, int v, int level) {
+        findEdge(u, v)->traffic = level;
+        findEdge(v, u)->traffic = level;
+    }
+
+    void setBlocked(int u, int v, bool b) {
+        findEdge(u, v)->blocked = b;
+        findEdge(v, u)->blocked = b;
+    }
+
+    int degree(int u) const {
+        int c = 0;
+        for (Edge* e = adj[u]; e; e = e->next) c++;
+        return c;
+    }
+
+    /* the k-th road (1-based) in the same order used by displayRoads() */
+    bool roadAt(int index, int& a, int& b) const {
+        int idx = 0;
+        for (int u = 0; u < n; u++)
+            for (Edge* e = adj[u]; e; e = e->next) {
+                if (u > e->to) continue;
+                idx++;
+                if (idx == index) { a = u; b = e->to; return true; }
+            }
+        return false;
+    }
+
+    void displayLocations() const {
+        cout << left << setw(5) << "No." << setw(24) << "Location" << "Roads\n";
+        printLine('-', 36);
+        for (int i = 0; i < n; i++)
+            cout << setw(5) << (i + 1) << setw(24) << fit(names[i], 23) << degree(i) << "\n";
+    }
+
+    /* mode 0 = all roads, mode 1 = only blocked / heavily congested roads */
+    int displayRoads(int mode) const {
+        int idx = 0, shown = 0;
+        cout << left << setw(5) << "No." << setw(21) << "From" << setw(21) << "To"
+             << setw(10) << "Dist(km)" << setw(16) << "Traffic" << "Status\n";
+        printLine('-', 78);
+        for (int u = 0; u < n; u++)
+            for (Edge* e = adj[u]; e; e = e->next) {
+                if (u > e->to) continue;
+                idx++;
+                bool problem = e->blocked || e->traffic >= 4;
+                if (mode == 1 && !problem) continue;
+                cout << setw(5) << idx
+                     << setw(21) << fit(names[u], 20)
+                     << setw(21) << fit(names[e->to], 20)
+                     << setw(10) << e->dist
+                     << setw(16) << (toStr(e->traffic) + " - " + trafficName(e->traffic))
+                     << (e->blocked ? "BLOCKED" : "Open") << "\n";
+                shown++;
+            }
+        return shown;
+    }
+
+    void displayNeighbours(int u) const {
+        for (Edge* e = adj[u]; e; e = e->next)
+            cout << "     -> " << setw(22) << fit(names[e->to], 21) << e->dist << " km, "
+                 << trafficName(e->traffic) << (e->blocked ? " [BLOCKED]" : "") << "\n";
+    }
+
+    /* Dijkstra's shortest-path algorithm (blocked roads are skipped,
+       edge weight = distance x traffic factor) */
+    void dijkstra(int src, double cost[], int prev[]) const {
+        for (int i = 0; i < n; i++) { cost[i] = INF; prev[i] = -1; }
+        cost[src] = 0;
+        MinHeap h;
+        h.push(0, src);
+        while (!h.empty()) {
+            HeapItem top = h.pop();
+            int u = top.node;
+            if (top.key > cost[u]) continue;           /* stale entry */
+            for (Edge* e = adj[u]; e; e = e->next) {
+                if (e->blocked) continue;
+                double w = e->dist * trafficFactor(e->traffic);
+                if (cost[u] + w < cost[e->to]) {
+                    cost[e->to] = cost[u] + w;
+                    prev[e->to] = u;
+                    h.push(cost[e->to], e->to);
+                }
+            }
+        }
+    }
+
+    Route computeRoute(int src, int dest) const {
+        Route r = emptyRoute();
+        double cost[MAX_LOCATIONS];
+        int prev[MAX_LOCATIONS];
+        dijkstra(src, cost, prev);
+        if (cost[dest] >= INF) return r;
+
+        int tmp[MAX_LOCATIONS];
+        int k = 0;
+        for (int v = dest; v != -1; v = prev[v]) tmp[k++] = v;
+        r.len = k;
+        for (int i = 0; i < k; i++) r.path[i] = tmp[k - 1 - i];
+        r.cost = cost[dest];
+        r.dist = 0;
+        for (int i = 0; i + 1 < k; i++) r.dist += findEdge(r.path[i], r.path[i + 1])->dist;
+        r.found = true;
+        return r;
+    }
+
+    void printRoute(const Route& r) const {
+        if (!r.found) {
+            cout << "  ** NO ROUTE AVAILABLE - the destination is cut off by blocked roads. **\n";
+            return;
+        }
+        cout << "  Path : ";
+        for (int i = 0; i < r.len; i++) {
+            cout << names[r.path[i]];
+            if (i + 1 < r.len) cout << " -> ";
+        }
+        cout << "\n";
+        if (r.len == 1) {
+            cout << "  (Already at the destination - no travel needed)\n";
+            return;
+        }
+        cout << "  Segments:\n";
+        for (int i = 0; i + 1 < r.len; i++) {
+            Edge* e = findEdge(r.path[i], r.path[i + 1]);
+            cout << "     " << (i + 1) << ". " << fit(names[r.path[i]], 20) << " -> "
+                 << fit(names[r.path[i + 1]], 20) << " : " << e->dist << " km, "
+                 << trafficName(e->traffic) << " traffic\n";
+        }
+        cout << "  Total road distance            : " << r.dist << " km\n";
+        cout << "  Traffic-weighted distance      : " << r.cost << " km\n";
+        cout << "  Estimated travel time (ETA)    : " << etaMinutes(r.cost) << " minutes\n";
+    }
+};
+
+/* ======================================================================
+ *  LINKED-LIST RECORDS
+ * ====================================================================== */
+struct Vehicle {
+    int id;
+    int type;          /* 1 Ambulance, 2 Fire Truck, 3 Police Car */
+    int location;
+    bool available;
+    Vehicle* next;
+};
+
+struct Hospital {
+    int id;
+    string name;
+    int location;
+    Hospital* next;
+};
+
+struct Emergency {
+    int id;
+    int location;
+    string locName;
+    int type;          /* 1 Accident, 2 Medical, 3 Fire, 4 Crime/Other */
+    int severity;      /* 1 (minor) .. 5 (life-threatening) */
+    int status;        /* 0 Pending, 1 Dispatched, 2 Completed */
+    int vehicleId;
+    int hospitalId;
+    int seq;           /* arrival order, used to break priority ties */
+    Emergency* next;
+};
+
+/* 
+ *  PRIORITY QUEUE (binary max-heap): highest severity first,
+ *  earlier arrival first when severities are equal.
+*/
+struct PQItem {
+    int id;
+    int severity;
+    int seq;
+};
+
+class EmergencyPQ {
+    PQItem a[MAX_PENDING];
+    int n;
+    static bool before(const PQItem& x, const PQItem& y) {
+        if (x.severity != y.severity) return x.severity > y.severity;
+        return x.seq < y.seq;
+    }
+public:
+    EmergencyPQ() : n(0) {
+        for (int i = 0; i < MAX_PENDING; i++) { a[i].id = 0; a[i].severity = 0; a[i].seq = 0; }
+    }
+    bool empty() const { return n == 0; }
+    bool full() const { return n >= MAX_PENDING; }
+    int size() const { return n; }
+    PQItem top() const { return a[0]; }
+
+    void push(const PQItem& it) {
+        int i = n++;
+        while (i > 0) {
+            int p = (i - 1) / 2;
+            if (!before(it, a[p])) break;
+            a[i] = a[p];
+            i = p;
+        }
+        a[i] = it;
+    }
+
+    void pop() {
+        PQItem last = a[--n];
+        int i = 0;
+        while (true) {
+            int l = 2 * i + 1;
+            if (l >= n) break;
+            int r = l + 1;
+            int c = (r < n && before(a[r], a[l])) ? r : l;
+            if (!before(a[c], last)) break;
+            a[i] = a[c];
+            i = c;
+        }
+        if (n > 0) a[i] = last;
+    }
+};
+
+/* ======================================================================
+ *  QUEUE (circular array): the most recent system activities (FIFO)
+ * ====================================================================== */
+class ActivityLog {
+    string items[LOG_CAPACITY];
+    int front, count, counter;
+public:
+    ActivityLog() : front(0), count(0), counter(0) {}
+
+    void enqueue(const string& msg) {
+        if (count == LOG_CAPACITY) {              /* full: drop the oldest */
+            front = (front + 1) % LOG_CAPACITY;
+            count--;
+        }
+        counter++;
+        items[(front + count) % LOG_CAPACITY] = "#" + toStr(counter) + "  " + msg;
+        count++;
+    }
+
+    void display() const {
+        if (count == 0) { cout << "  (No activity recorded yet.)\n"; return; }
+        cout << "  Showing the last " << count << " event(s), oldest first:\n\n";
+        for (int i = 0; i < count; i++)
+            cout << "  " << items[(front + i) % LOG_CAPACITY] << "\n";
+    }
+};
+
+/* generic insertion sort on an array of pointers (stable) */
+template <typename T>
+void sortPtrs(T** arr, int n, bool (*before)(const T*, const T*)) {
+    for (int i = 1; i < n; i++) {
+        T* key = arr[i];
+        int j = i - 1;
+        while (j >= 0 && before(key, arr[j])) {
+            arr[j + 1] = arr[j];
+            j--;
+        }
+        arr[j + 1] = key;
+    }
+}
+
+bool emByseverity(const Emergency* a, const Emergency* b) {
+    if (a->severity != b->severity) return a->severity > b->severity;
+    return a->id < b->id;
+}
+bool emByLocation(const Emergency* a, const Emergency* b) {
+    string x = toLower(a->locName), y = toLower(b->locName);
+    if (x != y) return x < y;
+    return a->id < b->id;
+}
+bool vehByType(const Vehicle* a, const Vehicle* b) {
+    if (a->type != b->type) return a->type < b->type;
+    return a->id < b->id;
+}
+bool hosByName(const Hospital* a, const Hospital* b) {
+    return toLower(a->name) < toLower(b->name);
+}
+
+struct SampleRoad { int u, v; double d; int t; };
+
+/* ======================================================================
+ *  MAIN SYSTEM
+ * ====================================================================== */
+class TrafficSystem {
+    Graph graph;
+    Vehicle *vHead, *vTail;
+    Hospital *hHead, *hTail;
+    Emergency *eHead, *eTail;
+    EmergencyPQ pq;
+    ActivityLog activity;
+    int nextVehicleId, nextHospitalId, nextEmergencyId, nextSeq;
+
+    TrafficSystem(const TrafficSystem&);
+    TrafficSystem& operator=(const TrafficSystem&);
+
+    /* ---------------------- record helpers ---------------------- */
+    Vehicle* addVehicle(int type, int loc) {
+        Vehicle* v = new Vehicle;
+        v->id = nextVehicleId++;
+        v->type = type;
+        v->location = loc;
+        v->available = true;
+        v->next = NULL;
+        if (!vHead) vHead = vTail = v; else { vTail->next = v; vTail = v; }
+        return v;
+    }
+
+    Hospital* addHospital(const string& nm, int loc) {
+        Hospital* h = new Hospital;
+        h->id = nextHospitalId++;
+        h->name = nm;
+        h->location = loc;
+        h->next = NULL;
+        if (!hHead) hHead = hTail = h; else { hTail->next = h; hTail = h; }
+        return h;
+    }
+
+    Emergency* addEmergency(int loc, int type, int sev) {
+        Emergency* e = new Emergency;
+        e->id = nextEmergencyId++;
+        e->location = loc;
+        e->locName = graph.name(loc);
+        e->type = type;
+        e->severity = sev;
+        e->status = 0;
+        e->vehicleId = -1;
+        e->hospitalId = -1;
+        e->seq = nextSeq++;
+        e->next = NULL;
+        if (!eHead) eHead = eTail = e; else { eTail->next = e; eTail = e; }
+        PQItem it;
+        it.id = e->id;
+        it.severity = sev;
+        it.seq = e->seq;
+        pq.push(it);
+        return e;
+    }
+
+    Vehicle* findVehicle(int id) const {
+        for (Vehicle* v = vHead; v; v = v->next) if (v->id == id) return v;
+        return NULL;
+    }
+    Hospital* findHospital(int id) const {
+        for (Hospital* h = hHead; h; h = h->next) if (h->id == id) return h;
+        return NULL;
+    }
+    Emergency* findEmergency(int id) const {
+        for (Emergency* e = eHead; e; e = e->next) if (e->id == id) return e;
+        return NULL;
+    }
+
+    bool removeVehicle(int id) {
+        Vehicle *prev = NULL, *cur = vHead;
+        while (cur && cur->id != id) { prev = cur; cur = cur->next; }
+        if (!cur) return false;
+        if (prev) prev->next = cur->next; else vHead = cur->next;
+        if (cur == vTail) vTail = prev;
+        delete cur;
+        return true;
+    }
+
+    bool removeHospital(int id) {
+        Hospital *prev = NULL, *cur = hHead;
+        while (cur && cur->id != id) { prev = cur; cur = cur->next; }
+        if (!cur) return false;
+        if (prev) prev->next = cur->next; else hHead = cur->next;
+        if (cur == hTail) hTail = prev;
+        delete cur;
+        return true;
+    }
+
+    int countVehicles(bool onlyAvailable) const {
+        int c = 0;
+        for (Vehicle* v = vHead; v; v = v->next) if (!onlyAvailable || v->available) c++;
+        return c;
+    }
+    int countEmergencies(int status) const {
+        int c = 0;
+        for (Emergency* e = eHead; e; e = e->next) if (e->status == status) c++;
+        return c;
+    }
+    int countHospitals() const {
+        int c = 0;
+        for (Hospital* h = hHead; h; h = h->next) c++;
+        return c;
+    }
+    int countAllEmergencies() const {
+        int c = 0;
+        for (Emergency* e = eHead; e; e = e->next) c++;
+        return c;
+    }
+
+    /* ---------------------- table printing ---------------------- */
+    void vehicleHeader() const {
+        cout << left << setw(5) << "ID" << setw(13) << "Type" << setw(24) << "Current Location"
+             << "Status\n";
+        printLine('-', 56);
+    }
+    void vehicleRow(const Vehicle* v) const {
+        cout << left << setw(5) << v->id << setw(13) << vehicleTypeName(v->type)
+             << setw(24) << fit(graph.name(v->location), 23)
+             << (v->available ? "Available" : "ON MISSION") << "\n";
+    }
+    void hospitalHeader() const {
+        cout << left << setw(5) << "ID" << setw(26) << "Hospital" << "Location\n";
+        printLine('-', 56);
+    }
+    void hospitalRow(const Hospital* h) const {
+        cout << left << setw(5) << h->id << setw(26) << fit(h->name, 25)
+             << fit(graph.name(h->location), 24) << "\n";
+    }
+    void emergencyHeader() const {
+        cout << left << setw(5) << "ID" << setw(12) << "Type" << setw(19) << "Severity"
+             << setw(20) << "Location" << setw(12) << "Status" << setw(5) << "Veh" << "Hosp\n";
+        printLine('-', 78);
+    }
+    void emergencyRow(const Emergency* e) const {
+        cout << left << setw(5) << e->id << setw(12) << emergencyTypeShort(e->type)
+             << setw(19) << (toStr(e->severity) + "-" + severityName(e->severity))
+             << setw(20) << fit(e->locName, 19) << setw(12) << statusName(e->status)
+             << setw(5) << (e->vehicleId > 0 ? toStr(e->vehicleId) : string("-"))
+             << (e->hospitalId > 0 ? toStr(e->hospitalId) : string("-")) << "\n";
+    }
+
+    /* ---------------------- generic helpers --------------------- */
+    bool needLocations(int minimum) const {
+        if (graph.size() < minimum) {
+            cout << "\n  ! You need at least " << minimum
+                 << " location(s) first. Use menu 1 (Manage Roads & Locations) to add them.\n";
+            return false;
+        }
+        return true;
+    }
+
+    int chooseLocation(const string& prompt) const {
+        cout << "\n";
+        graph.displayLocations();
+        cout << "\n";
+        return readInt(prompt, 1, graph.size()) - 1;
+    }
+
+    /* ======================= 1. ROADS & LOCATIONS ================= */
+    void menuRoads() {
+        while (true) {
+            printHeader("MANAGE ROADS & LOCATIONS");
+            cout << "  1. Add a new location\n"
+                 << "  2. Add a road between two locations\n"
+                 << "  3. View all locations\n"
+                 << "  4. View all roads\n"
+                 << "  0. Back to main menu\n\n";
+            int c = readInt("Enter your choice: ", 0, 4);
+            if (c == 0) return;
+            if (c == 1) {
+                string nm = readName("Enter the location name (e.g. Sector 62): ", 23);
+                int r = graph.addLocation(nm);
+                if (r == -1) cout << "  ! Location limit (" << MAX_LOCATIONS << ") reached.\n";
+                else if (r == -2) cout << "  ! A location with this name already exists.\n";
+                else {
+                    cout << "  OK: Location '" << nm << "' added as number " << (r + 1) << ".\n";
+                    activity.enqueue("Location added: " + nm);
+                }
+            } else if (c == 2) {
+                if (!needLocations(2)) continue;
+                int u = chooseLocation("Select the FIRST location number: ");
+                int v = chooseLocation("Select the SECOND location number: ");
+                if (u == v) { cout << "  ! A road must connect two different locations.\n"; continue; }
+                if (graph.findEdge(u, v)) {
+                    cout << "  ! A road between these locations already exists "
+                            "(change its traffic from menu 2).\n";
+                    continue;
+                }
+                double d = readDouble("Enter road length in km (0.1 - 500): ", 0.1, 500);
+                printTrafficLegend();
+                int t = readInt("Enter current traffic level (1-5): ", 1, 5);
+                graph.addRoad(u, v, d, t);
+                cout << "  OK: Road " << graph.name(u) << " <-> " << graph.name(v)
+                     << " (" << d << " km) added.\n";
+                activity.enqueue("Road added: " + graph.name(u) + " <-> " + graph.name(v));
+            } else if (c == 3) {
+                if (!needLocations(1)) continue;
+                cout << "\n";
+                graph.displayLocations();
+            } else {
+                if (graph.roadCount() == 0) { cout << "\n  (No roads added yet.)\n"; continue; }
+                cout << "\n";
+                graph.displayRoads(0);
+            }
+        }
+    }
+
+    /* ======================= 2. TRAFFIC MANAGEMENT ================ */
+    bool chooseRoad(int& u, int& v) {
+        if (graph.roadCount() == 0) { cout << "\n  (No roads exist yet.)\n"; return false; }
+        cout << "\n";
+        graph.displayRoads(0);
+        cout << "\n";
+        int k = readInt("Enter the road number: ", 1, graph.roadCount());
+        return graph.roadAt(k, u, v);
+    }
+
+    void menuTraffic() {
+        while (true) {
+            printHeader("TRAFFIC MANAGEMENT");
+            cout << "  1. View traffic on all roads\n"
+                 << "  2. Update traffic level of a road\n"
+                 << "  3. Block a road (accident / construction / flooding)\n"
+                 << "  4. Re-open a blocked road\n"
+                 << "  5. Show congested (Heavy / Jam) and blocked roads\n"
+                 << "  0. Back to main menu\n\n";
+            int c = readInt("Enter your choice: ", 0, 5);
+            if (c == 0) return;
+            int u = 0, v = 0;
+            if (c == 1) {
+                if (graph.roadCount() == 0) { cout << "\n  (No roads exist yet.)\n"; continue; }
+                cout << "\n";
+                graph.displayRoads(0);
+            } else if (c == 2) {
+                if (!chooseRoad(u, v)) continue;
+                printTrafficLegend();
+                int t = readInt("Enter the NEW traffic level (1-5): ", 1, 5);
+                graph.setTraffic(u, v, t);
+                cout << "  OK: Traffic on " << graph.name(u) << " <-> " << graph.name(v)
+                     << " is now '" << trafficName(t) << "'.\n";
+                activity.enqueue("Traffic updated: " + graph.name(u) + " <-> " + graph.name(v) +
+                                 " = " + trafficName(t));
+            } else if (c == 3) {
+                if (!chooseRoad(u, v)) continue;
+                if (graph.findEdge(u, v)->blocked) { cout << "  ! That road is already blocked.\n"; continue; }
+                graph.setBlocked(u, v, true);
+                cout << "  OK: Road " << graph.name(u) << " <-> " << graph.name(v)
+                     << " is now BLOCKED. Routes will avoid it.\n";
+                activity.enqueue("Road BLOCKED: " + graph.name(u) + " <-> " + graph.name(v));
+            } else if (c == 4) {
+                if (!chooseRoad(u, v)) continue;
+                if (!graph.findEdge(u, v)->blocked) { cout << "  ! That road is not blocked.\n"; continue; }
+                graph.setBlocked(u, v, false);
+                cout << "  OK: Road " << graph.name(u) << " <-> " << graph.name(v) << " is open again.\n";
+                activity.enqueue("Road re-opened: " + graph.name(u) + " <-> " + graph.name(v));
+            } else {
+                cout << "\n";
+                int s = graph.displayRoads(1);
+                if (s == 0) cout << "  (Good news: no heavily congested or blocked roads.)\n";
+            }
+        }
+    }
+
+    /* ======================= 3. REGISTER EMERGENCY ================ */
+    void registerEmergency() {
+        printHeader("REGISTER A NEW EMERGENCY");
+        if (!needLocations(1)) return;
+        if (pq.full()) { cout << "  ! Too many pending emergencies. Process some first.\n"; return; }
+
+        int loc = chooseLocation("Select the location of the emergency: ");
+        cout << "\n  Type of emergency:\n"
+             << "    1. Road Accident        (needs an Ambulance + hospital)\n"
+             << "    2. Medical Emergency    (needs an Ambulance + hospital)\n"
+             << "    3. Fire                 (needs a Fire Truck)\n"
+             << "    4. Crime / Other        (needs a Police Car)\n\n";
+        int type = readInt("Enter type (1-4): ", 1, 4);
+        cout << "\n  Severity scale:\n"
+             << "    1 = Minor   2 = Low   3 = Serious   4 = Critical   5 = Life-Threatening\n\n";
+        int sev = readInt("Enter severity (1-5): ", 1, 5);
+
+        Emergency* e = addEmergency(loc, type, sev);
+        cout << "\n  OK: Emergency #" << e->id << " registered.\n"
+             << "      Type     : " << emergencyTypeName(type) << "\n"
+             << "      Location : " << e->locName << "\n"
+             << "      Severity : " << sev << " (" << severityName(sev) << ")\n"
+             << "      Needs    : " << vehicleTypeName(requiredVehicleType(type))
+             << (needsHospital(type) ? " + nearest hospital" : "") << "\n"
+             << "      It has been added to the priority queue (" << pq.size() << " pending).\n"
+             << "      Use menu 7 to dispatch the highest-priority emergency.\n";
+        activity.enqueue("Emergency #" + toStr(e->id) + " registered: " + emergencyTypeShort(type) +
+                         " at " + e->locName + " (severity " + toStr(sev) + ")");
+    }
+
+    /* ======================= 4. VEHICLES ========================== */
+    void menuVehicles() {
+        while (true) {
+            printHeader("MANAGE EMERGENCY VEHICLES");
+            cout << "  1. Register a new vehicle\n"
+                 << "  2. View all vehicles\n"
+                 << "  3. Update the location of an available vehicle\n"
+                 << "  4. Remove an available vehicle\n"
+                 << "  0. Back to main menu\n\n";
+            int c = readInt("Enter your choice: ", 0, 4);
+            if (c == 0) return;
+            if (c == 1) {
+                if (!needLocations(1)) continue;
+                cout << "\n  Vehicle type:  1 = Ambulance   2 = Fire Truck   3 = Police Car\n\n";
+                int t = readInt("Enter vehicle type (1-3): ", 1, 3);
+                int loc = chooseLocation("Select the vehicle's current location: ");
+                Vehicle* v = addVehicle(t, loc);
+                cout << "  OK: " << vehicleTypeName(t) << " registered with ID " << v->id
+                     << " at " << graph.name(loc) << ".\n";
+                activity.enqueue(vehicleTypeName(t) + " #" + toStr(v->id) + " registered at " + graph.name(loc));
+            } else if (c == 2) {
+                if (!vHead) { cout << "\n  (No vehicles registered yet.)\n"; continue; }
+                cout << "\n";
+                vehicleHeader();
+                for (Vehicle* v = vHead; v; v = v->next) vehicleRow(v);
+            } else if (c == 3) {
+                if (!vHead) { cout << "\n  (No vehicles registered yet.)\n"; continue; }
+                cout << "\n";
+                vehicleHeader();
+                for (Vehicle* v = vHead; v; v = v->next) vehicleRow(v);
+                cout << "\n";
+                int id = readInt("Enter the vehicle ID: ", 1, 1000000);
+                Vehicle* v = findVehicle(id);
+                if (!v) { cout << "  ! No vehicle with that ID.\n"; continue; }
+                if (!v->available) { cout << "  ! This vehicle is on a mission; its location updates when the mission is completed.\n"; continue; }
+                int loc = chooseLocation("Select the NEW location: ");
+                v->location = loc;
+                cout << "  OK: Vehicle " << id << " is now at " << graph.name(loc) << ".\n";
+                activity.enqueue("Vehicle #" + toStr(id) + " moved to " + graph.name(loc));
+            } else {
+                if (!vHead) { cout << "\n  (No vehicles registered yet.)\n"; continue; }
+                cout << "\n";
+                vehicleHeader();
+                for (Vehicle* v = vHead; v; v = v->next) vehicleRow(v);
+                cout << "\n";
+                int id = readInt("Enter the ID of the vehicle to remove: ", 1, 1000000);
+                Vehicle* v = findVehicle(id);
+                if (!v) { cout << "  ! No vehicle with that ID.\n"; continue; }
+                if (!v->available) { cout << "  ! Cannot remove a vehicle that is on a mission.\n"; continue; }
+                removeVehicle(id);
+                cout << "  OK: Vehicle " << id << " removed.\n";
+                activity.enqueue("Vehicle #" + toStr(id) + " removed");
+            }
+        }
+    }
+
+    /* ======================= 5. HOSPITALS ========================= */
+    void menuHospitals() {
+        while (true) {
+            printHeader("MANAGE HOSPITALS");
+            cout << "  1. Register a new hospital\n"
+                 << "  2. View all hospitals\n"
+                 << "  3. Remove a hospital\n"
+                 << "  0. Back to main menu\n\n";
+            int c = readInt("Enter your choice: ", 0, 3);
+            if (c == 0) return;
+            if (c == 1) {
+                if (!needLocations(1)) continue;
+                string nm = readName("Enter the hospital name: ", 25);
+                int loc = chooseLocation("Select the hospital's location: ");
+                Hospital* h = addHospital(nm, loc);
+                cout << "  OK: Hospital '" << nm << "' registered with ID " << h->id
+                     << " at " << graph.name(loc) << ".\n";
+                activity.enqueue("Hospital registered: " + nm);
+            } else if (c == 2) {
+                if (!hHead) { cout << "\n  (No hospitals registered yet.)\n"; continue; }
+                cout << "\n";
+                hospitalHeader();
+                for (Hospital* h = hHead; h; h = h->next) hospitalRow(h);
+            } else {
+                if (!hHead) { cout << "\n  (No hospitals registered yet.)\n"; continue; }
+                cout << "\n";
+                hospitalHeader();
+                for (Hospital* h = hHead; h; h = h->next) hospitalRow(h);
+                cout << "\n";
+                int id = readInt("Enter the ID of the hospital to remove: ", 1, 1000000);
+                Hospital* h = findHospital(id);
+                if (!h) { cout << "  ! No hospital with that ID.\n"; continue; }
+                string nm = h->name;
+                removeHospital(id);
+                cout << "  OK: Hospital '" << nm << "' removed.\n";
+                activity.enqueue("Hospital removed: " + nm);
+            }
+        }
+    }
+
+    /* ======================= 6. FIND ANY ROUTE ==================== */
+    void findRoute() {
+        printHeader("FIND THE FASTEST ROUTE BETWEEN TWO LOCATIONS");
+        if (!needLocations(2)) return;
+        int s = chooseLocation("Select the START location: ");
+        int d = chooseLocation("Select the DESTINATION location: ");
+        cout << "\n  Route: " << graph.name(s) << "  ==>  " << graph.name(d) << "\n";
+        Route r = graph.computeRoute(s, d);
+        graph.printRoute(r);
+        cout << "\n  (Calculated with Dijkstra's algorithm; blocked roads are avoided and "
+                "heavy traffic makes a road 'longer'.)\n";
+    }
+
+    /* ======================= 7. DISPATCH ========================== */
+    void dispatchNext() {
+        printHeader("DISPATCH THE NEXT EMERGENCY");
+        if (pq.empty()) {
+            cout << "  No pending emergencies. All clear!\n";
+            return;
+        }
+        PQItem top = pq.top();
+        Emergency* e = findEmergency(top.id);
+        if (!e) { pq.pop(); cout << "  ! Internal record missing; entry discarded.\n"; return; }
+
+        int need = requiredVehicleType(e->type);
+        cout << "  Highest-priority emergency in the queue:\n\n";
+        emergencyHeader();
+        emergencyRow(e);
+        cout << "\n  Required vehicle : " << vehicleTypeName(need) << "\n";
+        cout << "  Evaluating every available " << vehicleTypeName(need)
+             << " using Dijkstra's algorithm...\n\n";
+
+        cout << left << setw(5) << "ID" << setw(24) << "Currently at"
+             << setw(12) << "Dist(km)" << "ETA(min)\n";
+        printLine('-', 56);
+
+        Vehicle* best = NULL;
+        Route bestRoute = emptyRoute();
+        int candidates = 0;
+        for (Vehicle* v = vHead; v; v = v->next) {
+            if (!v->available || v->type != need) continue;
+            candidates++;
+            Route r = graph.computeRoute(v->location, e->location);
+            cout << left << setw(5) << v->id << setw(24) << fit(graph.name(v->location), 23);
+            if (r.found) cout << setw(12) << r.dist << etaMinutes(r.cost) << "\n";
+            else cout << "UNREACHABLE (roads blocked)\n";
+            if (r.found && (best == NULL || r.cost < bestRoute.cost)) { best = v; bestRoute = r; }
+        }
+
+        if (candidates == 0) {
+            cout << "\n  ! No available " << vehicleTypeName(need) << " right now.\n"
+                 << "    Emergency #" << e->id << " stays in the queue. Register a vehicle (menu 4) "
+                    "or complete a running mission (menu 9), then try again.\n";
+            activity.enqueue("Dispatch FAILED for #" + toStr(e->id) + ": no available " + vehicleTypeName(need));
+            return;
+        }
+        if (!best) {
+            cout << "\n  ! Every available " << vehicleTypeName(need)
+                 << " is cut off by blocked roads.\n"
+                 << "    Re-open a road (menu 2) and try again. Emergency #" << e->id
+                 << " stays in the queue.\n";
+            activity.enqueue("Dispatch FAILED for #" + toStr(e->id) + ": all routes blocked");
+            return;
+        }
+
+        /* choose the nearest reachable hospital (if the emergency needs one) */
+        Hospital* bestH = NULL;
+        Route hRoute = emptyRoute();
+        if (needsHospital(e->type)) {
+            for (Hospital* h = hHead; h; h = h->next) {
+                Route r = graph.computeRoute(e->location, h->location);
+                if (r.found && (bestH == NULL || r.cost < hRoute.cost)) { bestH = h; hRoute = r; }
+            }
+        }
+
+        /* commit the dispatch */
+        best->available = false;
+        e->status = 1;
+        e->vehicleId = best->id;
+        if (bestH) e->hospitalId = bestH->id;
+        pq.pop();
+
+        cout << "\n  >>> DISPATCHED: " << vehicleTypeName(need) << " #" << best->id
+             << " (from " << graph.name(best->location) << ") is the FASTEST option. <<<\n";
+        cout << "\n  LEG 1 - Vehicle to the incident (" << e->locName << "):\n";
+        graph.printRoute(bestRoute);
+
+        if (needsHospital(e->type)) {
+            if (bestH) {
+                cout << "\n  LEG 2 - Incident to the nearest hospital (" << bestH->name << "):\n";
+                graph.printRoute(hRoute);
+            } else {
+                cout << "\n  ! No reachable hospital found (none registered, or roads blocked). "
+                        "Register a hospital in menu 5.\n";
+            }
+        }
+        cout << "\n  Emergencies still waiting in the queue: " << pq.size() << "\n";
+        activity.enqueue("Emergency #" + toStr(e->id) + " dispatched: " + vehicleTypeName(need) + " #" +
+                         toStr(best->id) + " (ETA " + toStr((int)(etaMinutes(bestRoute.cost) + 0.5)) + " min)");
+    }
+
+    /* ======================= 8. VIEW PENDING ====================== */
+    void viewPending() {
+        printHeader("PENDING EMERGENCIES (in priority order)");
+        if (pq.empty()) { cout << "  No pending emergencies. All clear!\n"; return; }
+        EmergencyPQ copy = pq;             /* work on a copy so the real queue is untouched */
+        cout << left << setw(6) << "Rank" << setw(5) << "ID" << setw(12) << "Type" << setw(19) << "Severity"
+             << "Location\n";
+        printLine('-', 66);
+        int rank = 1;
+        while (!copy.empty()) {
+            PQItem it = copy.top();
+            copy.pop();
+            Emergency* e = findEmergency(it.id);
+            if (!e) continue;
+            cout << setw(6) << rank++ << setw(5) << e->id << setw(12) << emergencyTypeShort(e->type)
+                 << setw(19) << (toStr(e->severity) + "-" + severityName(e->severity))
+                 << e->locName << "\n";
+        }
+        cout << "\n  Rank 1 will be dispatched first. Equal severity = first come, first served.\n";
+    }
+
+    /* ======================= 9. EMERGENCY RECORDS ================= */
+    void completeEmergency() {
+        bool any = false;
+        for (Emergency* e = eHead; e; e = e->next) if (e->status == 1) any = true;
+        if (!any) { cout << "\n  (No emergencies are currently being handled.)\n"; return; }
+        cout << "\n  Emergencies currently being handled:\n\n";
+        emergencyHeader();
+        for (Emergency* e = eHead; e; e = e->next) if (e->status == 1) emergencyRow(e);
+        cout << "\n";
+        int id = readInt("Enter the ID of the emergency to mark as COMPLETED: ", 1, 1000000);
+        Emergency* e = findEmergency(id);
+        if (!e || e->status != 1) { cout << "  ! That emergency is not in the 'Dispatched' state.\n"; return; }
+        e->status = 2;
+        Vehicle* v = findVehicle(e->vehicleId);
+        if (v) {
+            v->available = true;
+            Hospital* h = findHospital(e->hospitalId);
+            v->location = h ? h->location : e->location;
+            cout << "  OK: Emergency #" << id << " completed. " << vehicleTypeName(v->type) << " #" << v->id
+                 << " is available again at " << graph.name(v->location) << ".\n";
+        } else {
+            cout << "  OK: Emergency #" << id << " marked as completed.\n";
+        }
+        activity.enqueue("Emergency #" + toStr(id) + " completed");
+    }
+
+    void deleteCompleted() {
+        Emergency *prev = NULL, *cur = eHead;
+        int removed = 0;
+        while (cur) {
+            if (cur->status == 2) {
+                Emergency* dead = cur;
+                if (prev) prev->next = cur->next; else eHead = cur->next;
+                if (cur == eTail) eTail = prev;
+                cur = cur->next;
+                delete dead;
+                removed++;
+            } else {
+                prev = cur;
+                cur = cur->next;
+            }
+        }
+        cout << "  OK: " << removed << " completed record(s) deleted.\n";
+        if (removed > 0) activity.enqueue(toStr(removed) + " completed emergency record(s) deleted");
+    }
+
+    void menuEmergencyRecords() {
+        while (true) {
+            printHeader("EMERGENCY RECORDS");
+            cout << "  1. View all emergency records\n"
+                 << "  2. Mark a dispatched emergency as COMPLETED (frees the vehicle)\n"
+                 << "  3. Delete all completed records\n"
+                 << "  0. Back to main menu\n\n";
+            int c = readInt("Enter your choice: ", 0, 3);
+            if (c == 0) return;
+            if (c == 1) {
+                if (!eHead) { cout << "\n  (No emergencies recorded yet.)\n"; continue; }
+                cout << "\n";
+                emergencyHeader();
+                for (Emergency* e = eHead; e; e = e->next) emergencyRow(e);
+                cout << "\n  Pending: " << countEmergencies(0) << "   Dispatched: " << countEmergencies(1)
+                     << "   Completed: " << countEmergencies(2) << "\n";
+            } else if (c == 2) {
+                completeEmergency();
+            } else {
+                deleteCompleted();
+            }
+        }
+    }
+
+    /* ======================= 10. SEARCH =========================== */
+    Emergency** emergencyArray(int& n) const {
+        n = countAllEmergencies();
+        if (n == 0) return NULL;
+        Emergency** arr = new Emergency*[n];
+        int i = 0;
+        for (Emergency* e = eHead; e; e = e->next) arr[i++] = e;
+        return arr;
+    }
+
+    void menuSearch() {
+        while (true) {
+            printHeader("SEARCH RECORDS");
+            cout << "  1. Find an emergency by ID            (binary search)\n"
+                 << "  2. Find emergencies by location name  (linear search)\n"
+                 << "  3. Find a vehicle by ID\n"
+                 << "  4. Find a hospital by name\n"
+                 << "  5. Find a location and its connecting roads\n"
+                 << "  0. Back to main menu\n\n";
+            int c = readInt("Enter your choice: ", 0, 5);
+            if (c == 0) return;
+            if (c == 1) {
+                int n;
+                Emergency** arr = emergencyArray(n);
+                if (!arr) { cout << "\n  (No emergencies recorded yet.)\n"; continue; }
+                int id = readInt("Enter the emergency ID: ", 1, 1000000);
+                /* records are stored in increasing ID order, so binary search works */
+                int lo = 0, hi = n - 1, pos = -1;
+                while (lo <= hi) {
+                    int mid = (lo + hi) / 2;
+                    if (arr[mid]->id == id) { pos = mid; break; }
+                    if (arr[mid]->id < id) lo = mid + 1; else hi = mid - 1;
+                }
+                if (pos == -1) cout << "  ! No emergency with ID " << id << " found.\n";
+                else { cout << "\n"; emergencyHeader(); emergencyRow(arr[pos]); }
+                delete[] arr;
+            } else if (c == 2) {
+                if (!eHead) { cout << "\n  (No emergencies recorded yet.)\n"; continue; }
+                string key = readLine("Enter (part of) the location name: ");
+                bool header = false;
+                for (Emergency* e = eHead; e; e = e->next)
+                    if (containsText(e->locName, key)) {
+                        if (!header) { cout << "\n"; emergencyHeader(); header = true; }
+                        emergencyRow(e);
+                    }
+                if (!header) cout << "  ! No emergency found at a location matching '" << key << "'.\n";
+            } else if (c == 3) {
+                if (!vHead) { cout << "\n  (No vehicles registered yet.)\n"; continue; }
+                int id = readInt("Enter the vehicle ID: ", 1, 1000000);
+                Vehicle* v = findVehicle(id);
+                if (!v) cout << "  ! No vehicle with ID " << id << ".\n";
+                else { cout << "\n"; vehicleHeader(); vehicleRow(v); }
+            } else if (c == 4) {
+                if (!hHead) { cout << "\n  (No hospitals registered yet.)\n"; continue; }
+                string key = readLine("Enter (part of) the hospital name: ");
+                bool header = false;
+                for (Hospital* h = hHead; h; h = h->next)
+                    if (containsText(h->name, key)) {
+                        if (!header) { cout << "\n"; hospitalHeader(); header = true; }
+                        hospitalRow(h);
+                    }
+                if (!header) cout << "  ! No hospital matching '" << key << "'.\n";
+            } else {
+                if (!needLocations(1)) continue;
+                string key = readLine("Enter (part of) the location name: ");
+                bool found = false;
+                for (int i = 0; i < graph.size(); i++)
+                    if (containsText(graph.name(i), key)) {
+                        found = true;
+                        cout << "\n  " << graph.name(i) << "  (location no. " << (i + 1) << ", "
+                             << graph.degree(i) << " road(s))\n";
+                        graph.displayNeighbours(i);
+                    }
+                if (!found) cout << "  ! No location matching '" << key << "'.\n";
+            }
+        }
+    }
+
+    /* ======================= 11. SORT ============================= */
+    void menuSort() {
+        while (true) {
+            printHeader("SORT RECORDS");
+            cout << "  1. Emergencies by severity (most severe first)\n"
+                 << "  2. Emergencies by location name (A-Z)\n"
+                 << "  3. Vehicles by type\n"
+                 << "  4. Hospitals by name (A-Z)\n"
+                 << "  0. Back to main menu\n\n";
+            int c = readInt("Enter your choice: ", 0, 4);
+            if (c == 0) return;
+            if (c == 1 || c == 2) {
+                int n;
+                Emergency** arr = emergencyArray(n);
+                if (!arr) { cout << "\n  (No emergencies recorded yet.)\n"; continue; }
+                if (c == 1) sortPtrs<Emergency>(arr, n, emByseverity);
+                else sortPtrs<Emergency>(arr, n, emByLocation);
+                cout << "\n";
+                emergencyHeader();
+                for (int i = 0; i < n; i++) emergencyRow(arr[i]);
+                delete[] arr;
+            } else if (c == 3) {
+                int n = countVehicles(false);
+                if (n == 0) { cout << "\n  (No vehicles registered yet.)\n"; continue; }
+                Vehicle** arr = new Vehicle*[n];
+                int i = 0;
+                for (Vehicle* v = vHead; v; v = v->next) arr[i++] = v;
+                sortPtrs<Vehicle>(arr, n, vehByType);
+                cout << "\n";
+                vehicleHeader();
+                for (i = 0; i < n; i++) vehicleRow(arr[i]);
+                delete[] arr;
+            } else {
+                int n = countHospitals();
+                if (n == 0) { cout << "\n  (No hospitals registered yet.)\n"; continue; }
+                Hospital** arr = new Hospital*[n];
+                int i = 0;
+                for (Hospital* h = hHead; h; h = h->next) arr[i++] = h;
+                sortPtrs<Hospital>(arr, n, hosByName);
+                cout << "\n";
+                hospitalHeader();
+                for (i = 0; i < n; i++) hospitalRow(arr[i]);
+                delete[] arr;
+            }
+        }
+    }
+
+    /* ======================= INFO SCREENS ========================= */
+    void showBanner() const {
+        cout << "\n";
+        printLine('=');
+        cout << "   JAYPEE INSTITUTE OF INFORMATION TECHNOLOGY, NOIDA\n"
+             << "   Data Structures Lab (15B17CI371) - B.Tech 3rd Semester (2025-2026)\n";
+        printLine('-');
+        cout << "        TRAFFIC & EMERGENCY ROUTE MANAGEMENT SYSTEM\n";
+        printLine('-');
+        cout << "   Team   : Riddhi Khandelwal (2501030072), Anukriti Pandey (2501030084)\n"
+             << "   Batch  : B11        Faculty: Dr. Potukuchi Raghu Vamsi\n";
+        printLine('=');
+        cout << "\n  WELCOME! In an emergency every minute counts, yet traffic jams and blocked\n"
+             << "  roads can slow ambulances and fire trucks down. This program helps by:\n\n"
+             << "    * keeping a map of the city (locations + roads, with live traffic),\n"
+             << "    * ranking incoming emergencies by how serious they are,\n"
+             << "    * picking the vehicle that can REALLY arrive fastest (not just the closest),\n"
+             << "    * and guiding it to the incident and on to the nearest hospital.\n\n"
+             << "  QUICK START:  1) Build the map   2) Add vehicles & hospitals\n"
+             << "                3) Register emergencies   4) Dispatch (menu 7)\n"
+             << "                5) Mark them completed (menu 9)\n";
+        printLine('-');
+    }
+
+    void showHelp() const {
+        printHeader("HELP / HOW THE SYSTEM WORKS");
+        cout << "  PRIORITY   Emergencies wait in a priority queue (heap). Severity 5 is served\n"
+             << "             before severity 1. Equal severity: earlier arrival goes first.\n\n"
+             << "  VEHICLES   Accident / Medical -> Ambulance (+ nearest hospital)\n"
+             << "             Fire               -> Fire Truck\n"
+             << "             Crime / Other      -> Police Car\n\n"
+             << "  ROUTING    The city is a graph: locations = vertices, roads = edges.\n"
+             << "             Dijkstra's algorithm finds the cheapest path where\n"
+             << "                 cost = road length x traffic factor\n"
+             << "             Traffic factors: Free 1.0, Light 1.25, Moderate 1.5, Heavy 2.0, Jam 3.0\n"
+             << "             Blocked roads are never used.\n\n"
+             << "  ETA        Estimated time = traffic-weighted distance / " << AVG_SPEED_KMPH << " km/h.\n\n"
+             << "  DISPATCH   For the top-priority emergency, EVERY available matching vehicle\n"
+             << "             is evaluated; the one with the smallest ETA is sent. Try blocking a\n"
+             << "             road (menu 2) and dispatching again to see the choice change!\n\n"
+             << "  LIFECYCLE  Pending -> Dispatched -> Completed. Completing a mission frees the\n"
+             << "             vehicle and moves it to the hospital (or incident location).\n";
+    }
+
+    void showDashboard() const {
+        cout << "\n";
+        printLine('=');
+        cout << "  MAIN MENU    | Locations: " << graph.size() << " | Roads: " << graph.roadCount()
+             << " | Vehicles free: " << countVehicles(true) << "/" << countVehicles(false)
+             << " | Hospitals: " << countHospitals() << "\n"
+             << "               | Pending emergencies: " << pq.size()
+             << " | Being handled: " << countEmergencies(1) << "\n";
+        printLine('=');
+    }
+
+    void showMainMenu() const {
+        cout << "   1. Manage Roads & Locations      8. View Pending Emergencies\n"
+             << "   2. Manage Traffic                9. Emergency Records (complete / delete)\n"
+             << "   3. Register an Emergency        10. Search Records\n"
+             << "   4. Manage Vehicles              11. Sort Records\n"
+             << "   5. Manage Hospitals             12. Recent Activity Log\n"
+             << "   6. Find Route (any 2 places)    13. Help / How it works\n"
+             << "   7. DISPATCH Next Emergency       0. Exit\n\n";
+    }
+
+    /* ======================= SAMPLE DATA ========================== */
+    void loadSampleData() {
+        static const char* locs[10] = {
+            "Sector 62 (JIIT)", "Sector 18 Market", "Botanical Garden", "Sector 15", "Film City",
+            "Sector 37", "Sector 50", "Sector 76", "Atta Market", "City Centre"
+        };
+        static const SampleRoad roads[15] = {
+            {0, 8, 3.5, 2}, {0, 3, 4.0, 1}, {0, 5, 5.0, 3}, {8, 3, 2.5, 4}, {8, 5, 3.0, 1},
+            {3, 1, 3.0, 2}, {1, 9, 2.0, 5}, {1, 2, 3.5, 1}, {2, 4, 3.0, 2}, {4, 9, 3.5, 1},
+            {9, 6, 4.0, 3}, {5, 6, 4.5, 2}, {6, 7, 3.5, 1}, {7, 9, 5.0, 2}, {2, 9, 4.0, 3}
+        };
+        for (int i = 0; i < 10; i++) graph.addLocation(locs[i]);
+        for (int i = 0; i < 15; i++) graph.addRoad(roads[i].u, roads[i].v, roads[i].d, roads[i].t);
+
+        addVehicle(1, 0);   /* Ambulance at Sector 62   */
+        addVehicle(1, 4);   /* Ambulance at Film City   */
+        addVehicle(1, 7);   /* Ambulance at Sector 76   */
+        addVehicle(2, 3);   /* Fire Truck at Sector 15  */
+        addVehicle(3, 9);   /* Police Car at City Centre*/
+
+        addHospital("City General Hospital", 1);
+        addHospital("Sunrise Hospital", 8);
+        addHospital("Metro Care Hospital", 6);
+
+        activity.enqueue("Sample city loaded (10 locations, 15 roads, 5 vehicles, 3 hospitals)");
+        cout << "\n  OK: Sample city loaded: 10 locations, 15 roads, 5 vehicles, 3 hospitals.\n"
+             << "  (Distances and traffic are illustrative, not real map data.)\n"
+             << "  TRY THIS: register 3 emergencies of different severity (menu 3), look at the\n"
+             << "  queue (menu 8), then dispatch (menu 7) repeatedly.\n";
+    }
+
+public:
+    TrafficSystem()
+        : vHead(NULL), vTail(NULL), hHead(NULL), hTail(NULL), eHead(NULL), eTail(NULL),
+          nextVehicleId(1), nextHospitalId(1), nextEmergencyId(1), nextSeq(1) {}
+
+    ~TrafficSystem() {
+        while (vHead) { Vehicle* t = vHead->next; delete vHead; vHead = t; }
+        while (hHead) { Hospital* t = hHead->next; delete hHead; hHead = t; }
+        while (eHead) { Emergency* t = eHead->next; delete eHead; eHead = t; }
+    }
+
+    void run() {
+        showBanner();
+        if (readYesNo("\nLoad the built-in sample city (locations, roads, vehicles, hospitals)? (y/n): "))
+            loadSampleData();
+        else
+            cout << "\n  Starting with an empty system. Begin with menu 1 to add locations and roads.\n";
+
+        bool quit = false;
+        while (!quit) {
+            showDashboard();
+            showMainMenu();
+            int c = readInt("Enter your choice (0-13): ", 0, 13);
+            switch (c) {
+                case 1:  menuRoads(); break;
+                case 2:  menuTraffic(); break;
+                case 3:  registerEmergency(); pauseScreen(); break;
+                case 4:  menuVehicles(); break;
+                case 5:  menuHospitals(); break;
+                case 6:  findRoute(); pauseScreen(); break;
+                case 7:  dispatchNext(); pauseScreen(); break;
+                case 8:  viewPending(); pauseScreen(); break;
+                case 9:  menuEmergencyRecords(); break;
+                case 10: menuSearch(); break;
+                case 11: menuSort(); break;
+                case 12: printHeader("RECENT ACTIVITY LOG (queue)"); activity.display(); pauseScreen(); break;
+                case 13: showHelp(); pauseScreen(); break;
+                default:
+                    if (readYesNo("\nAre you sure you want to exit? (y/n): ")) quit = true;
+                    break;
+            }
+        }
+        cout << "\n";
+        printLine('=');
+        cout << "  Thank you for using the Traffic & Emergency Route Management System.\n"
+             << "  Drive safe, and make way for emergency vehicles!\n";
+        printLine('=');
+    }
+};
+
+int main() {
+    cout << fixed << setprecision(1) << left;
+    TrafficSystem system;
+    system.run();
+    return 0;
+}
