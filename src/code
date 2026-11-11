@@ -5,7 +5,7 @@ using namespace std;
 const int    MAX_LOCATIONS   = 30;
 const int    MAX_PENDING     = 200;
 const int    LOG_CAPACITY    = 10;
-const double AVG_SPEED_KMPH  = 40.0;   
+const double AVG_SPEED_KMPH  = 40.0;
 const double INF             = 1e18;
 
 template <typename T>
@@ -111,6 +111,14 @@ void pauseScreen() {
     cout << "\nPress ENTER to continue...";
     string s;
     getline(cin, s);
+}
+
+void clearScreen() {
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
 }
 
 /* -------------------------- Naming / lookup helpers -------------------- */
@@ -514,7 +522,7 @@ struct Emergency {
     Emergency* next;
 };
 
-/* 
+/*
  *  PRIORITY QUEUE (binary max-heap): highest severity first,
  *  earlier arrival first when severities are equal.
 */
@@ -1456,21 +1464,29 @@ public:
             showMainMenu();
             int c = readInt("Enter your choice (0-13): ", 0, 13);
             switch (c) {
-                case 1:  menuRoads(); break;
-                case 2:  menuTraffic(); break;
-                case 3:  registerEmergency(); pauseScreen(); break;
-                case 4:  menuVehicles(); break;
-                case 5:  menuHospitals(); break;
-                case 6:  findRoute(); pauseScreen(); break;
-                case 7:  dispatchNext(); pauseScreen(); break;
-                case 8:  viewPending(); pauseScreen(); break;
-                case 9:  menuEmergencyRecords(); break;
-                case 10: menuSearch(); break;
-                case 11: menuSort(); break;
-                case 12: printHeader("RECENT ACTIVITY LOG (queue)"); activity.display(); pauseScreen(); break;
-                case 13: showHelp(); pauseScreen(); break;
+                case 1:  menuRoads(); clearScreen(); break;
+                case 2:  menuTraffic(); clearScreen(); break;
+                case 3:  registerEmergency(); pauseScreen(); clearScreen(); break;
+                case 4:  menuVehicles(); clearScreen(); break;
+                case 5:  menuHospitals(); clearScreen(); break;
+                case 6:  findRoute(); pauseScreen(); clearScreen(); break;
+                case 7:  dispatchNext(); pauseScreen(); clearScreen(); break;
+                case 8:  viewPending(); pauseScreen(); clearScreen(); break;
+                case 9:  menuEmergencyRecords(); clearScreen(); break;
+                case 10: menuSearch(); clearScreen(); break;
+                case 11: menuSort(); clearScreen(); break;
+                case 12: printHeader("RECENT ACTIVITY LOG (queue)"); activity.display(); pauseScreen(); clearScreen(); break;
+                case 13: showHelp(); pauseScreen(); clearScreen(); break;
                 default:
-                    if (readYesNo("\nAre you sure you want to exit? (y/n): ")) quit = true;
+                    if (readYesNo("\nAre you sure you want to exit? (y/n): "))
+                    {
+                        quit = true;
+                        clearScreen();
+                    }
+                    else
+                    {
+                        clearScreen();
+                    }
                     break;
             }
         }
